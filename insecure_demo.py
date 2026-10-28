@@ -1,40 +1,58 @@
 import hashlib
-import pickle
-import random
+import json
+import os
+import re
+import secrets
 import sqlite3
 import subprocess
 
 import requests
 import yaml
 
-DB_PASSWORD = "SuperSecret123!"  # Учебный пример: пароль в коде
+DB_PASSWORD = os.environ["DB_PASSWORD"]
 
 
 def get_user(username):
     conn = sqlite3.connect("app.db")
-    query = f"SELECT * FROM users WHERE name = '{username}'"
-    return conn.execute(query).fetchall()
+    return conn.execute(
+        "SELECT * FROM users WHERE name = ?",
+        (username,)
+    ).fetchall()
 
 
 def ping(host):
-    return subprocess.run("ping -c 1 " + host, shell=True)
+    if not re.fullmatch(r"[A-Za-z0-9.-]+", host):
+        raise ValueError("Invalid host")
+
+    return subprocess.run(
+        ["ping", "-c", "1", host],
+        check=False
+    )
 
 
-def hash_password(password):
-    return hashlib.md5(password.encode()).hexdigest()
+def hash_password(password, salt=None):
+    salt = salt or os.urandom(16)
+    digest = hashlib.scrypt(
+        password.encode(),
+        salt=salt,
+        n=2**14,
+        r=8,
+        p=1
+    )
+    return salt, digest
 
 
 def make_reset_token():
-    return str(random.random())
+    return secrets.token_urlsafe(32)
 
 
 def load_config(text):
-    return yaml.load(text, Loader=yaml.Loader)
+    return yaml.safe_load(text)
 
 
 def load_session(data):
-    return pickle.loads(data)
+    return json.loads(data)
 
 
 def fetch(url):
-    return requests.get(url, verify=False)
+    return requests.get(url, timeout=10)
